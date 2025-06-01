@@ -46,41 +46,42 @@ static bool create_hotspot_connection_file(const WiFiCard& card,
   // connection of that name exists - aka an error here can be ignored. We
   // re-create it just to be sure, since for example, the wifi card might have
   // been changed during re-boots.
-  if (OHDFilesystemUtil::exists(
-          get_ohd_wifi_hotspot_connection_nm_filename())) {
-    OHDUtil::run_command("nmcli",
-                         {"con", "delete", OHD_WIFI_HOTSPOT_CONNECTION_NAME});
-  }
-  // and create the hotspot one
-  OHDUtil::run_command(
-      "nmcli",
-      {"con add type wifi ifname", card.device_name, "con-name",
-       OHD_WIFI_HOTSPOT_CONNECTION_NAME, "autoconnect no",
-       fmt::format("ssid {}", is_air ? "openhd_air" : "openhd_ground")});
-  OHDUtil::run_command("nmcli",
-                       {"con modify ", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
-                        " 802-11-wireless.mode ap", "802-11-wireless.band",
-                        use_5g_channel ? "a" : "bg", "ipv4.method shared"});
-  OHDUtil::run_command("nmcli",
-                       {"con modify ", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
-                        " wifi-sec.key-mgmt wpa-psk"});
-  OHDUtil::run_command("nmcli",
-                       {"con modify ", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
-                        " wifi-sec.psk \"openhdopenhd\""});
-  OHDUtil::run_command("nmcli", {"con modify", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
-                                 "ipv4.addresses 192.168.3.1/24"});
+//   if (OHDFilesystemUtil::exists(
+//           get_ohd_wifi_hotspot_connection_nm_filename())) {
+//     OHDUtil::run_command("nmcli",
+//                          {"con", "delete", OHD_WIFI_HOTSPOT_CONNECTION_NAME});
+//   }
+//   // and create the hotspot one
+//   OHDUtil::run_command(
+//       "nmcli",
+//       {"con add type wifi ifname", card.device_name, "con-name",
+//        OHD_WIFI_HOTSPOT_CONNECTION_NAME, "autoconnect no",
+//        fmt::format("ssid {}", is_air ? "openhd_air" : "openhd_ground")});
+//   OHDUtil::run_command("nmcli",
+//                        {"con modify ", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
+//                         " 802-11-wireless.mode ap", "802-11-wireless.band",
+//                         use_5g_channel ? "a" : "bg", "ipv4.method shared"});
+//   OHDUtil::run_command("nmcli",
+//                        {"con modify ", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
+//                         " wifi-sec.key-mgmt wpa-psk"});
+//   OHDUtil::run_command("nmcli",
+//                        {"con modify ", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
+//                         " wifi-sec.psk \"openhdopenhd\""});
+//   OHDUtil::run_command("nmcli", {"con modify", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
+//                                  "ipv4.addresses 192.168.3.1/24"});
   return true;
 }
 
 bool WifiHotspot::util_delete_nm_file() {
   // cleanup - proper stop of openhd, do not leave any traces behind.
-  if (OHDFilesystemUtil::exists(
-          get_ohd_wifi_hotspot_connection_nm_filename())) {
-    OHDUtil::run_command("nmcli",
-                         {"con", "delete", OHD_WIFI_HOTSPOT_CONNECTION_NAME});
-    return true;
-  }
-  return false;
+//   if (OHDFilesystemUtil::exists(
+//           get_ohd_wifi_hotspot_connection_nm_filename())) {
+//     OHDUtil::run_command("nmcli",
+//                          {"con", "delete", OHD_WIFI_HOTSPOT_CONNECTION_NAME});
+//     return true;
+//   }
+//   return false;
+	return true;
 }
 
 WifiHotspot::WifiHotspot(OHDProfile profile, WiFiCard wifiCard,
