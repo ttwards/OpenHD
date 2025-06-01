@@ -25,6 +25,7 @@
 
 #include "AirTelemetry.h"
 #include "GroundTelemetry.h"
+#include "ARESTelemetry.h"
 
 OHDTelemetry::OHDTelemetry(OHDProfile profile1, bool enableExtendedLogging)
     : m_profile(std::move(profile1)),
@@ -46,6 +47,8 @@ OHDTelemetry::OHDTelemetry(OHDProfile profile1, bool enableExtendedLogging)
                                         this->m_enableExtendedLogging);
     });
   }
+  m_ares_telemetry = std::make_unique<ARESTelemetry>(m_profile, m_enableExtendedLogging);
+  assert(m_ares_telemetry);
 }
 
 OHDTelemetry::~OHDTelemetry() {
@@ -94,4 +97,5 @@ void OHDTelemetry::set_link_handle(std::shared_ptr<OHDLink> link) {
   } else {
     m_ground_telemetry->set_link_handle(link);
   }
+  m_ares_telemetry->set_link_handle(link);
 }

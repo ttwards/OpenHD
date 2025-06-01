@@ -50,6 +50,8 @@
 
 #include "openhd_config.h"
 #include "openhd_temporary_air_or_ground.h"
+#include "openhd_global_constants.hpp"
+#include "openhd_spdlog.h"
 
 const std::string command = "AT+MWRSSI\n";
 const std::string command2 = "AT+MWTXPOWER\n";
@@ -492,6 +494,11 @@ void MicrohardLink::transmit_video_data(
 void MicrohardLink::transmit_audio_data(
     const openhd::AudioPacket& audio_packet) {
   openhd::log::get_default()->warn("Transmitting audio data (not implemented)");
+}
+
+void MicrohardLink::transmit_ares_data(OHDLink::AresTxPacket packet) {
+    // TODO: Implement Ares data transmission for MicrohardLink
+    openhd::log::get_default()->debug("MicrohardLink::transmit_ares_data called, data size: {}", packet.data->size());
 }
 
 std::vector<openhd::Setting> MicrohardLink::get_all_settings() {

@@ -39,7 +39,7 @@
 // Forward declare them to speed up compilation time.
 class AirTelemetry;
 class GroundTelemetry;
-
+class ARESTelemetry;
 /**
  * This class holds either a Air telemetry or Ground Telemetry instance.
  */
@@ -81,6 +81,8 @@ class OHDTelemetry {
   std::unique_ptr<AirTelemetry> m_air_telemetry;
   // active when ground
   std::unique_ptr<GroundTelemetry> m_ground_telemetry;
+
+  std::unique_ptr<ARESTelemetry> m_ares_telemetry;
   // Main telemetry thread. Note that the endpoints also might have their own
   // Receive threads
   std::unique_ptr<std::thread> m_loop_thread;

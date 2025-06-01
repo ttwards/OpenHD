@@ -161,6 +161,7 @@ class WBLink : public OHDLink {
   // for example, we do not support changing the frequency or similar.
   bool try_schedule_work_item(const std::shared_ptr<WorkItem>& work_item);
   // Called by telemetry on both air and ground (send to opposite, respective)
+  void transmit_ares_data(AresTxPacket packet) override;
   void transmit_telemetry_data(TelemetryTxPacket packet) override;
   // Called by the camera stream on the air unit only
   // transmit video data via wifibradcast
@@ -201,6 +202,9 @@ class WBLink : public OHDLink {
   // For telemetry, bidirectional in opposite directions
   std::unique_ptr<WBStreamTx> m_wb_tele_tx;
   std::unique_ptr<WBStreamRx> m_wb_tele_rx;
+  // For ares udp telemetry, bidirectional in opposite directions
+  std::unique_ptr<WBStreamTx> m_wb_ares_tx;
+  std::unique_ptr<WBStreamRx> m_wb_ares_rx;
   // For video, on air there are only tx instances, on ground there are only rx
   // instances.
   std::vector<std::unique_ptr<WBStreamTx>> m_wb_video_tx_list;

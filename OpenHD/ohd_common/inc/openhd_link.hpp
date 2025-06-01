@@ -55,6 +55,33 @@ class OHDLink {
  public:
   typedef std::function<void(std::shared_ptr<std::vector<uint8_t>> data)>
       ON_TELE_DATA_CB;
+  typedef std::function<void(std::shared_ptr<std::vector<uint8_t>> data)>
+      ON_ARES_DATA_CB;
+
+ public:
+    /**
+   * valid on both air and ground instance
+   * send telemetry data to the ground if air unit and vice versa.
+   */
+	struct AresTxPacket {
+      std::shared_ptr<std::vector<uint8_t>> data;
+      int n_injections = 1;
+    };
+    virtual void transmit_ares_data(AresTxPacket packet) = 0;
+	void on_receive_ares_data(std::shared_ptr<std::vector<uint8_t>> data) {
+		auto tmp = m_ares_data_cb;
+		if(tmp) {
+			auto& cb = *tmp;
+			cb(std::move(data));
+		}
+	}
+	void register_on_receive_ares_data_cb(const ON_ARES_DATA_CB& cb) {	
+		if(cb == nullptr) {
+			m_ares_data_cb = nullptr;
+			return;
+		}
+		m_ares_data_cb = std::make_shared<ON_ARES_DATA_CB>(cb);
+	}
 
  public:
   // --- Telemetry air and ground both receive and send --------
@@ -126,6 +153,7 @@ class OHDLink {
 
  private:
   std::shared_ptr<ON_TELE_DATA_CB> m_tele_data_cb;
+  std::shared_ptr<ON_ARES_DATA_CB> m_ares_data_cb;
   std::shared_ptr<ON_VIDEO_DATA_CB> m_video_data_cb;
 
  public:

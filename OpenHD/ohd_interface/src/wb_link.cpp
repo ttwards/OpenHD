@@ -197,6 +197,40 @@ WBLink::WBLink(OHDProfile profile, std::vector<WiFiCard> broadcast_cards)
     m_wb_tele_tx->set_encryption(true);
   }
   {
+    // Setup the tx & rx instances for ares udp telemetry. Telemetry is bidirectional,aka
+    // tx radio port on air is the same as rx on ground and verse visa
+    const auto radio_port_rx =
+        m_profile.is_air ? openhd::ARES_UDP_RX_RADIO_PORT
+                         : openhd::ARES_UDP_TX_RADIO_PORT;
+    const auto radio_port_tx =
+        m_profile.is_air ? openhd::ARES_UDP_TX_RADIO_PORT
+                         : openhd::ARES_UDP_RX_RADIO_PORT;
+    auto cb_rx = [this](const uint8_t* data, int data_len) {
+      m_last_received_packet_ts_ms = openhd::util::steady_clock_time_epoch_ms();
+      auto shared =
+          std::make_shared<std::vector<uint8_t>>(data, data + data_len);
+      on_receive_ares_data(shared);
+    };
+    WBStreamRx::Options options_ares_rx{};
+    options_ares_rx.enable_fec = false;
+    options_ares_rx.radio_port = radio_port_rx;
+    options_ares_rx.enable_threading = true;
+    // receive queue: On air, up to 16 packets
+    // On ground, up to 32 packets
+    options_ares_rx.packet_queue_size = m_profile.is_air ? 16 : 32;
+    m_wb_ares_rx = std::make_unique<WBStreamRx>(m_wb_txrx, options_ares_rx);
+    m_wb_ares_rx->set_callback(cb_rx);
+    WBStreamTx::Options options_ares_tx{};
+    options_ares_tx.enable_fec = false;
+    options_ares_tx.radio_port = radio_port_tx;
+    // Transmission queue: On air, up to 32 packets
+    // On ground, up to 16 packets
+    options_ares_tx.packet_data_queue_size = m_profile.is_air ? 32 : 16;
+    m_wb_ares_tx =
+        std::make_unique<WBStreamTx>(m_wb_txrx, options_ares_tx, m_tx_header_1);
+    m_wb_ares_tx->set_encryption(true);
+  }
+  {
     // Video is unidirectional, aka always goes from air pi to ground pi
     if (m_profile.is_air) {
       // we transmit video
@@ -349,6 +383,8 @@ WBLink::~WBLink() {
   // network manager
   m_wb_tele_rx.reset();
   m_wb_tele_tx.reset();
+  m_wb_ares_rx.reset();
+  m_wb_ares_tx.reset();
   m_wb_video_tx_list.resize(0);
   m_wb_video_rx_list.resize(0);
   m_wb_audio_tx.reset();
@@ -1233,6 +1269,15 @@ bool WBLink::try_schedule_work_item(
   m_console->debug("Cannot get lock,cannot add {}", work_item->TAG);
   m_console->warn("Please try again later");
   return false;
+}
+
+void WBLink::transmit_ares_data(AresTxPacket packet) {
+  assert(packet.n_injections >= 1);
+  const auto n_dropped =
+      m_wb_ares_tx->enqueue_packet_dropping(packet.data, packet.n_injections);
+  if (n_dropped > 0) {
+    m_console->debug("Ares queue jam, dropped {}", n_dropped);
+  }
 }
 
 void WBLink::transmit_telemetry_data(TelemetryTxPacket packet) {

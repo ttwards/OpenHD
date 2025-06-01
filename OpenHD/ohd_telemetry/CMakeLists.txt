@@ -103,6 +103,8 @@ SET(sources
     src/endpoints/TCPEndpoint.h
     src/GroundTelemetrySettings.cpp
     src/AirTelemetrySettings.cpp
+    src/ARESTelemetry.cpp
+    src/ARESTelemetry.h
 )
 
 # Build it as a library
@@ -111,10 +113,11 @@ target_sources(OHDTelemetryLib PRIVATE ${sources})
 target_include_directories(OHDTelemetryLib 
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ../ohd_interface/lib/wifibroadcast/wifibroadcast/src
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>)
 
-target_link_libraries(OHDTelemetryLib PUBLIC OHDCommonLib)
+target_link_libraries(OHDTelemetryLib PUBLIC OHDCommonLib wifibroadcast)
 
 # include mavlink (header-only)
 add_library(mavlink INTERFACE)

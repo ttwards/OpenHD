@@ -145,6 +145,11 @@ void EthernetLink::transmit_audio_data(
   // Currently not implemented for EthernetLink
 }
 
+void EthernetLink::transmit_ares_data(OHDLink::AresTxPacket packet) {
+    // TODO: Implement Ares data transmission for EthernetLink
+    openhd::log::get_default()->debug("EthernetLink::transmit_ares_data called, data size: {}", packet.data->size());
+}
+
 void EthernetLink::handle_video_data(int stream_index, const uint8_t* data,
                                      int data_len) {
   // Forward incoming video data to the upper layer

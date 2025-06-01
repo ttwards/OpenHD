@@ -39,6 +39,7 @@ class MicrohardLink : public OHDLink {
       int stream_index,
       const openhd::FragmentedVideoFrame& fragmented_video_frame) override;
   void transmit_audio_data(const openhd::AudioPacket& audio_packet) override;
+  void transmit_ares_data(AresTxPacket packet) override;
   /**
    * @return all mavlink settings, values might change depending on air/ground
    * and/or the used hardware

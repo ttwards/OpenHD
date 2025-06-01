@@ -37,6 +37,11 @@ static constexpr auto TELEMETRY_WIFIBROADCAST_TX_RADIO_PORT = 4;
 static_assert(TELEMETRY_WIFIBROADCAST_RX_RADIO_PORT !=
                   TELEMETRY_WIFIBROADCAST_TX_RADIO_PORT,
               "Must be different");
+			  
+static constexpr auto ARES_UDP_RX_RADIO_PORT = 5;
+static constexpr auto ARES_UDP_TX_RADIO_PORT = 6;
+static_assert(ARES_UDP_RX_RADIO_PORT != ARES_UDP_TX_RADIO_PORT,
+              "Must be different");
 
 // Video is unidirectional from air to ground
 static constexpr auto VIDEO_PRIMARY_RADIO_PORT = 10;
