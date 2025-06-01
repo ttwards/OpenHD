@@ -14,8 +14,8 @@
 
 class ARESTelemetry {
 public:
-	constexpr static int ARES_UDP_RX_RADIO_PORT = 14550;
-	constexpr static int ARES_UDP_TX_RADIO_PORT = 14551;
+	constexpr static int ARES_UDP_RX_RADIO_PORT = 24550;
+	constexpr static int ARES_UDP_TX_RADIO_PORT = 24551;
 	ARESTelemetry(OHDProfile profile1, bool enableExtendedLogging = false);
 	~ARESTelemetry();
   // OHDTelemetry is agnostic of the type of transmission between air and ground
