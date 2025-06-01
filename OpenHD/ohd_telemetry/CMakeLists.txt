@@ -152,6 +152,10 @@ target_link_libraries(test_onboard_computer_status_read_stuff OHDTelemetryLib)
 add_executable(test_joystick_reader test/test_joystick_reader.cpp)
 target_link_libraries(test_joystick_reader OHDTelemetryLib)
 
+add_executable(test_udp_bidirect test/test_udp_bidirect.cpp)
+target_link_libraries(test_udp_bidirect OHDTelemetryLib)
+target_include_directories(test_udp_bidirect PRIVATE ../ohd_interface/lib/wifibroadcast/wifibroadcast/src)
+
 ####
 # NOTE: We do not need MAVSDK for OpenHD, the small amount of code we share is directly included
 ####
