@@ -104,7 +104,7 @@ void WifiHotspot::start() {
   m_console->debug("Starting WIFI hotspot on card {}", m_wifi_card.device_name);
   const auto args =
       std::vector<std::string>{"con", "up", OHD_WIFI_HOTSPOT_CONNECTION_NAME};
-  OHDUtil::run_command("nmcli", args);
+//   OHDUtil::run_command("nmcli", args);
   started = true;
   m_console->info("Wifi hotspot started");
   std::cout << blue << "Started WIFI hotspot on card "
@@ -116,7 +116,7 @@ void WifiHotspot::stop() {
   if (!started) return;
   const auto args =
       std::vector<std::string>{"con", "down", OHD_WIFI_HOTSPOT_CONNECTION_NAME};
-  OHDUtil::run_command("nmcli", args);
+//   OHDUtil::run_command("nmcli", args);
   m_console->info("Wifi hotspot stopped");
 }
 
