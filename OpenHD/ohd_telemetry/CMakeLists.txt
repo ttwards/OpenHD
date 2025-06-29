@@ -156,6 +156,10 @@ add_executable(test_udp_bidirect test/test_udp_bidirect.cpp)
 target_link_libraries(test_udp_bidirect OHDTelemetryLib)
 target_include_directories(test_udp_bidirect PRIVATE ../ohd_interface/lib/wifibroadcast/wifibroadcast/src)
 
+add_executable(test-rc-udp-listener test/test_rc_udp_listener.cpp)
+target_link_libraries(test-rc-udp-listener OHDTelemetryLib)
+target_include_directories(test-rc-udp-listener PRIVATE ../ohd_interface/lib/wifibroadcast/wifibroadcast/src)
+
 ####
 # NOTE: We do not need MAVSDK for OpenHD, the small amount of code we share is directly included
 ####

@@ -1546,11 +1546,11 @@ void WBLink::perform_channel_analyze(int channels_to_scan) {
     // Disable injection during analyze
     m_wb_txrx->set_passive_mode(true);
     // Sleep a bit to give the card time to switch
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::microseconds(200));
     m_console->debug("Analyzing [{}] {}Mhz@{}Mhz", channel.channel,
                      channel.frequency, channel_width);
     reset_all_rx_stats();
-    std::this_thread::sleep_for(std::chrono::seconds(4));
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
     const auto stats = m_wb_txrx->get_rx_stats();
     const auto n_foreign_packets = stats.count_p_any - stats.count_p_valid;
     m_console->debug("Got {} foreign packets {}:{}", n_foreign_packets,

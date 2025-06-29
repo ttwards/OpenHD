@@ -24,6 +24,9 @@
 #include "AirTelemetry.h"
 
 #include <chrono>
+#include "openhd_action_handler.h"
+#include "openhd_udp.h"
+#include <nlohmann/json.hpp>
 
 #include "mav_helper.h"
 #include "mavsdk_temporary/XMavlinkParamProvider.h"
@@ -59,10 +62,18 @@ AirTelemetry::AirTelemetry() : MavlinkSystem(OHD_SYS_ID_AIR) {
         });
   }
   setup_uart();
+
+  // RC channels UDP forward
+  m_rc_udp_forwarder =
+      std::make_unique<openhd::UDPForwarder>("127.0.0.1", 24660);
+  m_console->debug("RC UDP forward enabled on localhost:24660");
+
   m_console->debug("Created AirTelemetry");
 }
 
-AirTelemetry::~AirTelemetry() {}
+AirTelemetry::~AirTelemetry() {
+  // m_rc_udp_forwarder is cleaned up by unique_ptr
+}
 
 void AirTelemetry::send_messages_fc(std::vector<MavlinkMessage>& messages) {
   auto [generic, local_only] =
@@ -94,6 +105,9 @@ void AirTelemetry::send_messages_ground_unit(
 
 void AirTelemetry::on_messages_fc(std::vector<MavlinkMessage>& messages) {
   // openhd::log::get_default()->debug("on_messages_fc {}",messages.size());
+  for(const auto& msg : messages){
+    find_and_forward_rc_message(msg.m);
+  }
   // debugMavlinkMessage(message.m,"AirTelemetry::onMessageFC");
   //  Note: No OpenHD component ever talks to the FC, FC is completely passed
   //  through
@@ -105,6 +119,9 @@ void AirTelemetry::on_messages_fc(std::vector<MavlinkMessage>& messages) {
 void AirTelemetry::on_messages_ground_unit(
     std::vector<MavlinkMessage>& messages) {
   // m_console->debug("on_messages_ground_unit {}", messages.size());
+  for(const auto& msg : messages){
+    find_and_forward_rc_message(msg.m);
+  }
   //   filter out heartbeats from the openhd ground unit,we do not need to send
   //   them to the FC
   std::vector<MavlinkMessage> filtered_messages_fc;
@@ -124,6 +141,50 @@ void AirTelemetry::on_messages_ground_unit(
     OHDUtil::vec_append(responses,
                         component->process_mavlink_messages(messages));
     send_messages_ground_unit(responses);
+  }
+}
+
+void AirTelemetry::find_and_forward_rc_message(
+    const mavlink_message_t& mavlink_message) {
+  if (!m_rc_udp_forwarder) {
+    return;
+  }
+  std::array<uint16_t, 18> channels{};
+  bool is_rc_message = false;
+  if (mavlink_message.msgid == MAVLINK_MSG_ID_RC_CHANNELS) {
+    mavlink_rc_channels_t rc_channels;
+    mavlink_msg_rc_channels_decode(&mavlink_message, &rc_channels);
+    channels = {rc_channels.chan1_raw,  rc_channels.chan2_raw,
+                rc_channels.chan3_raw,  rc_channels.chan4_raw,
+                rc_channels.chan5_raw,  rc_channels.chan6_raw,
+                rc_channels.chan7_raw,  rc_channels.chan8_raw,
+                rc_channels.chan9_raw,  rc_channels.chan10_raw,
+                rc_channels.chan11_raw, rc_channels.chan12_raw,
+                rc_channels.chan13_raw, rc_channels.chan14_raw,
+                rc_channels.chan15_raw, rc_channels.chan16_raw,
+                rc_channels.chan17_raw, rc_channels.chan18_raw};
+    is_rc_message = true;
+  } else if (mavlink_message.msgid == MAVLINK_MSG_ID_RC_CHANNELS_OVERRIDE) {
+    mavlink_rc_channels_override_t rc_override;
+    mavlink_msg_rc_channels_override_decode(&mavlink_message, &rc_override);
+    channels = {rc_override.chan1_raw,  rc_override.chan2_raw,
+                rc_override.chan3_raw,  rc_override.chan4_raw,
+                rc_override.chan5_raw,  rc_override.chan6_raw,
+                rc_override.chan7_raw,  rc_override.chan8_raw,
+                rc_override.chan9_raw,  rc_override.chan10_raw,
+                rc_override.chan11_raw, rc_override.chan12_raw,
+                rc_override.chan13_raw, rc_override.chan14_raw,
+                rc_override.chan15_raw, rc_override.chan16_raw,
+                rc_override.chan17_raw, rc_override.chan18_raw};
+    is_rc_message = true;
+  }
+
+  if (is_rc_message) {
+    nlohmann::json j;
+    j["rc_channels"] = channels;
+    const std::string message = j.dump();
+    m_rc_udp_forwarder->forwardPacketViaUDP(
+        reinterpret_cast<const uint8_t*>(message.c_str()), message.length());
   }
 }
 

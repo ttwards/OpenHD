@@ -41,6 +41,7 @@
 #include "openhd_action_handler.h"
 #include "openhd_link.hpp"
 #include "openhd_spdlog.h"
+#include "openhd_udp.h"
 
 /**
  * OpenHD Air telemetry. Assumes a Ground instance running on the ground pi.
@@ -100,8 +101,11 @@ class AirTelemetry : public MavlinkSystem {
   // R.N only on air, and only FC uart settings
   std::vector<openhd::Setting> get_all_settings();
   void setup_uart();
+  // Looks for RC_CHANNELS or RC_CHANNELS_OVERRIDE in a mavlink message and forwards it via UDP
+  void find_and_forward_rc_message(const mavlink_message_t& mavlink_message);
 
  private:
+  std::unique_ptr<openhd::UDPForwarder> m_rc_udp_forwarder;
   std::unique_ptr<openhd::telemetry::air::SettingsHolder> m_air_settings;
   std::unique_ptr<SerialEndpointManager> m_fc_serial;
   // send/receive data via wb
