@@ -26,8 +26,10 @@
 
 #include <gst/gst.h>
 
+#include <cstdlib>
 #include <sstream>
 #include <string>
+#include <unistd.h>
 
 #include "camera_settings.hpp"
 #include "libcamera_iq_helper.h"
@@ -76,32 +78,36 @@ static std::string createSwEncoder(const CameraSettings& settings) {
 #ifdef EXPERIMENTAL_USE_OPENH264_ENCODER
     ss << createCiscoH264SwEncoder(settings);
 #else
-    // Now this is a bit annoying - we cannot deal with frame(s) using sliced
-    // encoding yet,so we have to disable it. But from that we get quite high
-    // latency, due to how x264enc needs to parallelize encoding. By using
-    // threads=2 we can reduce this issue a bit - and it probably is a good idea
-    // anyways to do so, since on platforms like rpi we do not want to hog too
-    // much of the CPU to not overload the system and on x86 2 threads / cores
-    // are enough for sw encode of most resolutions anyways. NOTE: While not
-    // exactly true, latency is ~ as many frame(s) as there are threads, aka 2
-    // frames for 2 threads dct8x8=true
+    // Ultra-low latency optimizations for screen capture
+    // - Reduce keyframe interval to 2 for faster recovery
+    // - Use single thread for minimum latency
+    // - Aggressive QP settings for consistent quality
+    // - Disable B-frames completely
     std::string slices_str;
     if (settings.h26x_num_slices >= 2) {
       slices_str = fmt::format(" option-string=\"slices={}\" ",
                                settings.h26x_num_slices);
     }
+    
+    // Calculate ultra-low latency keyframe interval (min 1, max 3)
+    int low_latency_keyframe_interval = std::max(1, std::min(3, settings.h26x_keyframe_interval));
+    
     ss << fmt::format(
-        "x264enc name=swencoder bitrate={} speed-preset=ultrafast  "
-        "tune=zerolatency key-int-max={} sliced-threads=false threads=2"
-        " intra-refresh={} qp_min=2 qp_step=10 {}! ",
-        settings.h26x_bitrate_kbits, settings.h26x_keyframe_interval,
+        "x264enc name=swencoder bitrate={} speed-preset=ultrafast "
+        "tune=zerolatency key-int-max={} threads=1 sliced-threads=false "
+        "bframes=0 b-adapt=0 rc-lookahead=0 sync-lookahead=0 "
+        "intra-refresh={} qp-min=16 qp-max=32 qp-step=4 "
+        "aud=false cabac=false dct8x8=false {}! ",
+        settings.h26x_bitrate_kbits, low_latency_keyframe_interval,
         settings.h26x_intra_refresh_type < 0 ? "false" : "true", slices_str);
 #endif
   } else if (settings.streamed_video_format.videoCodec == VideoCodec::H265) {
+    // Ultra-low latency H265 settings
+    int low_latency_keyframe_interval = std::max(1, std::min(3, settings.h26x_keyframe_interval));
     ss << fmt::format(
         "x265enc name=swencoder bitrate={} speed-preset=ultrafast "
         "tune=zerolatency key-int-max={} ! ",
-        settings.h26x_bitrate_kbits, settings.h26x_keyframe_interval);
+        settings.h26x_bitrate_kbits, low_latency_keyframe_interval);
   }
   return ss.str();
 }
@@ -810,19 +816,61 @@ static std::string create_input_custom_udp_rtp_port(
   return ss.str();
 }
 
-// Dummy stream using either HW or SW encode.
-static std::string createDummyStreamX(const CameraSettings& settings) {
+// Screen capture stream for desktop recording
+static std::string createScreenCaptureStream(const CameraSettings& settings) {
   const auto platform = OHDPlatform::instance();
   std::stringstream ss;
-  ss << "videotestsrc name=videotestsrc ! ";
-  // h265 cannot do NV12, but I420.
-  // x264 can do both NV12 and I420
-  // so we use I420 here since every SW encoder can do it.
+  
+  // Check if we have a display available
+  const char* display_env = std::getenv("DISPLAY");
+  const char* wayland_env = std::getenv("WAYLAND_DISPLAY");
+  
+  // Auto-configure X11 environment if needed
+  if ((!display_env || strlen(display_env) == 0) && (!wayland_env || strlen(wayland_env) == 0)) {
+    // Try to auto-detect and set up X11 environment
+    // This is useful when running as a service or via SSH
+    if (access("/tmp/.X11-unix/X0", F_OK) == 0) {
+      // X0 exists, set up environment
+      setenv("DISPLAY", ":0", 1);
+      // Try to find the correct XAUTHORITY file
+      if (access("/run/user/1000/gdm/Xauthority", F_OK) == 0) {
+        setenv("XAUTHORITY", "/run/user/1000/gdm/Xauthority", 1);
+      }
+    }
+  }
+  
+  // Try to capture real screen content with ultra-low latency settings
+  display_env = std::getenv("DISPLAY");  // Re-read after potential auto-configuration
+  if (display_env && strlen(display_env) > 0) {
+    // Use the existing DISPLAY variable - capture full screen and scale
+    ss << "ximagesrc display-name=" << display_env << " ";
+    // Restore use-damage and explicitly show pointer to fix tearing and cursor issues
+    ss << "use-damage=true show-pointer=true ! ";
+  } else if (wayland_env && strlen(wayland_env) > 0) {
+    // If no X11 display, try pipewiresrc for Wayland
+    ss << "pipewiresrc path=auto ! ";
+  } else {
+    // Last resort: try to capture from :0 directly - capture full screen and scale
+    ss << "ximagesrc display-name=:0 ";
+    // Restore use-damage and explicitly show pointer to fix tearing and cursor issues
+    ss << "use-damage=true show-pointer=true ! ";
+  }
+  
+  // Add video conversion and scaling, but no extra queue for lower latency
+  ss << "video/x-raw ! ";
+  ss << "videoconvert ! ";
+  // Removed videoscale queue for lower latency
+  ss << "videoscale ! ";
+  
+  // Set format to I420 for compatibility with ultra-low latency settings
   ss << fmt::format(
       "video/x-raw, format=I420,width={},height={},framerate={}/1 ! ",
       settings.streamed_video_format.width,
       settings.streamed_video_format.height,
       settings.streamed_video_format.framerate);
+  
+  // Remove queue buffering for minimum latency (direct encoding)
+  // Use appropriate encoder based on platform and settings
   if (settings.force_sw_encode) {
     ss << createSwEncoder(settings);
   } else {
@@ -834,10 +882,14 @@ static std::string createDummyStreamX(const CameraSettings& settings) {
       ss << createSwEncoder(settings);
     }
   }
-  // since the primary purpose here is testing, use sw encoder, which is always
-  // guaranteed to work
-  // ss << createSwEncoder(settings);
+  
   return ss.str();
+}
+
+// Dummy stream using either HW or SW encode - now uses screen capture
+static std::string createDummyStreamX(const CameraSettings& settings) {
+  // Use screen capture instead of test pattern
+  return createScreenCaptureStream(settings);
 }
 
 static std::string create_dummy_filesrc_stream(const CameraSettings& settings) {

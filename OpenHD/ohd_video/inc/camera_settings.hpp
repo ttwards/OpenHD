@@ -31,15 +31,16 @@
 // See camera_holder for how the settings are created the first time a camera is
 // detected and changed via mavlink / openhd mavlink.
 
-// For the default value, we assume a fec overhead of 20% - 8MBit/s before FEC
-// fits well into MCS index 3, even on highly polluted channels (we account for
-// the worst here)
-static constexpr int DEFAULT_BITRATE_KBITS = 8000;
+// For the default value, we use 15 Mbps for better video quality
+// Especially important for screen capture and 1080p streaming
+// Users can adjust this via the BITRATE_MBITS parameter
+static constexpr int DEFAULT_BITRATE_KBITS = 15000;  // 15 Mbps for high quality streaming
 // The ideal value is not definitive, and depends on the rf environment, the FEC
 // percentage, and the camera fps Higher values result in less key frames, and
 // better image quality at the same bitrate, but increases the risk for
 // "stuttering" in case frames are lost.
-static constexpr int DEFAULT_KEYFRAME_INTERVAL = 5;
+// For screen capture, we use a lower value (2) to minimize latency
+static constexpr int DEFAULT_KEYFRAME_INTERVAL = 2;
 
 // Minimum amount of free space required to enable air video recording.
 // Also, If the free space becomes less than that, air recording (if running)
