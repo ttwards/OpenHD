@@ -30,6 +30,9 @@
 #include <sstream>
 #include <string>
 #include <unistd.h>
+#include <vector>
+#include <fstream>
+#include <thread>
 
 #include "camera_settings.hpp"
 #include "libcamera_iq_helper.h"
@@ -821,55 +824,165 @@ static std::string createScreenCaptureStream(const CameraSettings& settings) {
   const auto platform = OHDPlatform::instance();
   std::stringstream ss;
   
-  // Check if we have a display available
+  // Setup X11 environment for SSH connections
   const char* display_env = std::getenv("DISPLAY");
   const char* wayland_env = std::getenv("WAYLAND_DISPLAY");
+  const char* ssh_client = std::getenv("SSH_CLIENT");
+  const char* ssh_connection = std::getenv("SSH_CONNECTION");
   
-  // Auto-configure X11 environment if needed
-  if ((!display_env || strlen(display_env) == 0) && (!wayland_env || strlen(wayland_env) == 0)) {
-    // Try to auto-detect and set up X11 environment
-    // This is useful when running as a service or via SSH
-    if (access("/tmp/.X11-unix/X0", F_OK) == 0) {
-      // X0 exists, set up environment
+  // Auto-configure X11 environment for SSH connections with retry mechanism
+  if (ssh_client || ssh_connection) {
+    openhd::log::get_default()->info("SSH connection detected, configuring X11 environment");
+    
+    // Set DISPLAY if not already set
+    if (!display_env || strlen(display_env) == 0) {
       setenv("DISPLAY", ":0", 1);
-      // Try to find the correct XAUTHORITY file
-      if (access("/run/user/1000/gdm/Xauthority", F_OK) == 0) {
-        setenv("XAUTHORITY", "/run/user/1000/gdm/Xauthority", 1);
+      display_env = ":0";
+      openhd::log::get_default()->debug("Set DISPLAY to :0 for SSH session");
+    }
+    
+    // Try to find and set XAUTHORITY - prioritize Xwayland auth files
+    std::vector<std::string> xauth_paths;
+    
+    // Add dynamic Xwayland auth files (most common in modern Ubuntu)
+    system("find /run/user/1000/ -name '.mutter-Xwaylandauth*' 2>/dev/null > /tmp/xauth_search.txt");
+    std::ifstream xauth_file("/tmp/xauth_search.txt");
+    std::string line;
+    while (std::getline(xauth_file, line)) {
+      if (!line.empty()) {
+        xauth_paths.push_back(line);
       }
+    }
+    xauth_file.close();
+    
+    // Add traditional auth file locations as fallback
+    xauth_paths.push_back("/run/user/1000/gdm/Xauthority");
+    xauth_paths.push_back("/var/run/gdm3/auth-for-gdm*/database");
+    xauth_paths.push_back("/var/lib/gdm3/:0.Xauth");
+    
+    // Try to set XAUTHORITY from the found paths
+    bool auth_found = false;
+    for (const auto& path : xauth_paths) {
+      if (access(path.c_str(), R_OK) == 0) {
+        setenv("XAUTHORITY", path.c_str(), 1);
+        openhd::log::get_default()->info("Set XAUTHORITY to {}", path);
+        auth_found = true;
+        break;
+      }
+    }
+    
+    if (!auth_found) {
+      openhd::log::get_default()->warn("Could not find valid XAUTHORITY file");
+    }
+    
+    // Allow X11 connections from localhost for SSH sessions with retry
+    const int max_xhost_retries = 3;
+    bool xhost_success = false;
+    for (int retry = 0; retry < max_xhost_retries; retry++) {
+      int result = system("timeout 5 xhost +local: 2>/dev/null");
+      if (result == 0) {
+        xhost_success = true;
+        openhd::log::get_default()->debug("xhost command succeeded on attempt {}", retry + 1);
+        break;
+      } else {
+        openhd::log::get_default()->warn("xhost command failed on attempt {} (exit code: {}), retrying...", 
+                                        retry + 1, result);
+        if (retry < max_xhost_retries - 1) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
+      }
+    }
+    
+    if (!xhost_success) {
+      openhd::log::get_default()->warn("Failed to configure xhost after {} attempts", max_xhost_retries);
     }
   }
   
-  // Try to capture real screen content with ultra-low latency settings
-  display_env = std::getenv("DISPLAY");  // Re-read after potential auto-configuration
-  if (display_env && strlen(display_env) > 0) {
-    // Use the existing DISPLAY variable - capture full screen and scale
-    ss << "ximagesrc display-name=" << display_env << " ";
-    // Restore use-damage and explicitly show pointer to fix tearing and cursor issues
-    ss << "use-damage=true show-pointer=true ! ";
-  } else if (wayland_env && strlen(wayland_env) > 0) {
-    // If no X11 display, try pipewiresrc for Wayland
-    ss << "pipewiresrc path=auto ! ";
-  } else {
-    // Last resort: try to capture from :0 directly - capture full screen and scale
-    ss << "ximagesrc display-name=:0 ";
-    // Restore use-damage and explicitly show pointer to fix tearing and cursor issues
-    ss << "use-damage=true show-pointer=true ! ";
+  // Re-read environment variables after potential changes
+  display_env = std::getenv("DISPLAY");
+  
+  // Try different capture methods based on available environment with fallback strategy
+  bool capture_method_selected = false;
+  
+  if (wayland_env && strlen(wayland_env) > 0) {
+    // Wayland environment - use pipewiresrc with error handling
+    openhd::log::get_default()->info("Using Wayland screen capture via pipewiresrc");
+    try {
+      ss << "pipewiresrc ! ";
+      ss << "video/x-raw ! ";
+      capture_method_selected = true;
+    } catch (const std::exception& e) {
+      openhd::log::get_default()->warn("Pipewiresrc configuration failed: {}", e.what());
+    }
   }
   
-  // Add video conversion and scaling, but no extra queue for lower latency
+  if (!capture_method_selected && display_env && strlen(display_env) > 0) {
+    // X11 environment - use ximagesrc with optimized settings for SSH and timeout handling
+    openhd::log::get_default()->info("Using X11 screen capture via ximagesrc on display {}", display_env);
+    
+    // Test X11 connection before using it
+    bool x11_available = false;
+    const int max_x11_retries = 3;
+    
+    for (int retry = 0; retry < max_x11_retries; retry++) {
+      // Test X11 connection with timeout
+      std::string test_cmd = fmt::format("timeout 5 xdpyinfo -display {} >/dev/null 2>&1", display_env);
+      int result = system(test_cmd.c_str());
+      
+      if (result == 0) {
+        x11_available = true;
+        openhd::log::get_default()->debug("X11 connection test succeeded on attempt {}", retry + 1);
+        break;
+      } else {
+        openhd::log::get_default()->warn("X11 connection test failed on attempt {} (exit code: {})", 
+                                        retry + 1, result);
+        if (retry < max_x11_retries - 1) {
+          openhd::log::get_default()->info("Waiting before X11 retry...");
+          std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        }
+      }
+    }
+    
+    if (x11_available) {
+      ss << "ximagesrc display-name=" << display_env << " ";
+      
+      // For SSH connections, use more conservative settings to avoid X errors
+      if (ssh_client || ssh_connection) {
+        ss << "use-damage=false show-pointer=true startx=0 starty=0 ";
+        ss << "remote=true ";  // Enable remote display support
+        // Add timeout and retry settings for better SSH resilience
+        ss << "endx=-1 endy=-1 ";  // Full screen capture
+      } else {
+        ss << "use-damage=true show-pointer=true ";
+      }
+      ss << "! ";
+      capture_method_selected = true;
+    } else {
+      openhd::log::get_default()->error("X11 connection failed after {} attempts", max_x11_retries);
+    }
+  }
+  
+  if (!capture_method_selected) {
+    // Ultimate fallback: try to connect to :0 directly with minimal settings
+    openhd::log::get_default()->warn("No display environment available, using fallback X11 configuration");
+    ss << "ximagesrc display-name=:0 ";
+    ss << "use-damage=false show-pointer=true startx=0 starty=0 ";
+    ss << "remote=true endx=-1 endy=-1 ";
+    ss << "! ";
+  }
+  
+  // Add video conversion and scaling pipeline
   ss << "video/x-raw ! ";
   ss << "videoconvert ! ";
-  // Removed videoscale queue for lower latency
   ss << "videoscale ! ";
   
-  // Set format to I420 for compatibility with ultra-low latency settings
+  // Set format to I420 for compatibility
   ss << fmt::format(
       "video/x-raw, format=I420,width={},height={},framerate={}/1 ! ",
       settings.streamed_video_format.width,
       settings.streamed_video_format.height,
       settings.streamed_video_format.framerate);
   
-  // Remove queue buffering for minimum latency (direct encoding)
   // Use appropriate encoder based on platform and settings
   if (settings.force_sw_encode) {
     ss << createSwEncoder(settings);
@@ -886,10 +999,36 @@ static std::string createScreenCaptureStream(const CameraSettings& settings) {
   return ss.str();
 }
 
-// Dummy stream using either HW or SW encode - now uses screen capture
+// Dummy stream using either HW or SW encode - prioritize screen capture with fallback
 static std::string createDummyStreamX(const CameraSettings& settings) {
-  // Use screen capture instead of test pattern
-  return createScreenCaptureStream(settings);
+  openhd::log::get_default()->info("Creating dummy stream with screen capture (fallback to test pattern)");
+  
+  // Try screen capture with retry mechanism
+  const int max_screen_capture_retries = 2;
+  for (int retry = 0; retry < max_screen_capture_retries; retry++) {
+    try {
+      std::string pipeline = createScreenCaptureStream(settings);
+      openhd::log::get_default()->info("Screen capture pipeline created successfully on attempt {}", retry + 1);
+      return pipeline;
+    } catch (const std::exception& e) {
+      openhd::log::get_default()->warn("Screen capture failed on attempt {} with exception: {}", 
+                                      retry + 1, e.what());
+      if (retry < max_screen_capture_retries - 1) {
+        openhd::log::get_default()->info("Retrying screen capture in 2 seconds...");
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+      }
+    } catch (...) {
+      openhd::log::get_default()->warn("Screen capture failed on attempt {} with unknown error", retry + 1);
+      if (retry < max_screen_capture_retries - 1) {
+        openhd::log::get_default()->info("Retrying screen capture in 2 seconds...");
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+      }
+    }
+  }
+  
+  openhd::log::get_default()->warn("Screen capture failed after {} attempts, falling back to test pattern", 
+                                  max_screen_capture_retries);
+  return createDummyStream(settings);
 }
 
 static std::string create_dummy_filesrc_stream(const CameraSettings& settings) {
